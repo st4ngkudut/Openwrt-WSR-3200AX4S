@@ -1,4 +1,6 @@
-name: 'Build OpenWrt WSR-3200AX4S'
+#by ST4NGKUDUT
+
+name: 'Build & Release OpenWrt WSR-3200AX4S'
 
 on:
   workflow_dispatch:
@@ -18,19 +20,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout Kode Repositori Anda
+      - name: 1. Checkout Kode Repositori
         uses: actions/checkout@v4
 
       - name: 2. Siapkan Variabel Build
         id: build_vars
         run: |
-          if [ "${{ github.event.inputs.openwrt_version }}" == "v24.10.2" ]; then
+          # CATATAN: Perbarui bagian ini jika ada rilis OpenWrt baru dengan kernel/vermagic berbeda
+          if [[ "${{ github.event.inputs.openwrt_version }}" == "v24.10.2" || "${{ github.event.inputs.openwrt_version }}" == "v24.10.1" || "${{ github.event.inputs.openwrt_version }}" == "v24.10.0" ]]; then
             echo "vermagic=49f3b78722ed2df9df713e744e978eb6" >> $GITHUB_OUTPUT 
             echo "kernel_config=config-6.6" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event.inputs.openwrt_version }}" == "v24.10.1" ]; then
-            echo "vermagic=49f3b78722ed2df9df713e744e978eb6" >> $GITHUB_OUTPUT
-            echo "kernel_config=config-6.6" >> $GITHUB_OUTPUT
           else
+            # Default untuk snapshot atau versi lain
             echo "vermagic=49f3b78722ed2df9df713e744e978eb6" >> $GITHUB_OUTPUT
             echo "kernel_config=config-6.6" >> $GITHUB_OUTPUT
           fi
@@ -55,7 +56,7 @@ jobs:
             ~/openwrt/dl
           key: ${{ runner.os }}-openwrt-${{ github.event.inputs.openwrt_version }}-${{ hashFiles('**/patches') }}
 
-      - name: 6. Checkout Versi dan Perbarui Feeds (dengan Retry)
+      - name: 6. Checkout Versi & Perbarui Feeds
         working-directory: ./openwrt
         run: |
           echo "BUILD_DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
@@ -63,6 +64,7 @@ jobs:
             git checkout ${{ github.event.inputs.openwrt_version }}
           fi
           
+          # Loop untuk mencoba ulang jika update feeds gagal
           for i in 1 2 3; do
             echo "Attempt $i to update feeds..."
             ./scripts/feeds update -a && break
@@ -77,11 +79,13 @@ jobs:
           
           ./scripts/feeds install -a
 
-      - name: 7. Siapkan Konfigurasi Build dan Terapkan Modifikasi
+      - name: 7. Terapkan Konfigurasi & Modifikasi Kustom
         working-directory: ./openwrt
         run: |
+          # Aktifkan ccache untuk kompilasi lebih cepat
           echo 'CONFIG_CCACHE=y' > .config
           
+          # Unduh & siapkan konfigurasi dasar
           if [ "${{ github.event.inputs.openwrt_version }}" != "snapshot" ]; then
             wget https://downloads.openwrt.org/releases/$(echo ${{ github.event.inputs.openwrt_version }} | sed 's/v//')/targets/mediatek/mt7622/config.buildinfo -O .config
           else
@@ -90,15 +94,17 @@ jobs:
           echo "CONFIG_TARGET_mediatek_mt7622_DEVICE_buffalo_wsr-3200ax4s=y" >> .config
           make defconfig
 
+          # Terapkan modifikasi dari folder 'patches'
           echo " applying custom DTS file..."
-          cp ../patches/wsr-3200ax4s.dts ./target/linux/mediatek/dts/
+          cp ../patches/mt7622-buffalo-wsr-3200ax4s.dts ./target/linux/mediatek/dts/
           
+          # Aktifkan MTD Concat di kernel
           echo " enabling MTD Concat..."
           echo "CONFIG_MTD_VIRT_CONCAT=y" >> ./target/linux/mediatek/mt7622/${{ steps.build_vars.outputs.kernel_config }}
           
+          # Atur Vermagic agar sesuai dengan rilis resmi
           echo " setting Vermagic..."
           echo "${{ steps.build_vars.outputs.vermagic }}" > ./vermagic
-
           sed -i 's|grep '\''=\[ym\]'\'' $(LINUX_DIR)/.config.set \| LC_ALL=C sort \| $(MKHASH) md5 > $(LINUX_DIR)/.vermagic|cp $(TOPDIR)/vermagic $(LINUX_DIR)/.vermagic|g' ./include/kernel-defaults.mk
           sed -i 's|STAMP_BUILT:=$(STAMP_BUILT)_$(shell $(SCRIPT_DIR)/kconfig.pl $(LINUX_DIR)/.config \| $(MKHASH) md5)|STAMP_BUILT:=$(STAMP_BUILT)_$(shell cat $(LINUX_DIR)/.vermagic)|g' ./package/kernel/linux/Makefile
           
@@ -106,11 +112,17 @@ jobs:
         working-directory: ./openwrt
         run: make -j$(nproc) download && make -j$(nproc) world
 
-      - name: 9. Unggah Artefak
-        uses: actions/upload-artifact@v4
+      - name: 9. Buat Rilis & Unggah Firmware
+        uses: softprops/action-gh-release@v2
         with:
-          name: WSR-3200AX4S-Firmware-${{ github.event.inputs.openwrt_version }}-${{ env.BUILD_DATE }}
-          path: |
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.event.inputs.openwrt_version }}-${{ env.BUILD_DATE }}
+          name: OpenWrt ${{ github.event.inputs.openwrt_version }} - WSR-3200AX4S (${{ env.BUILD_DATE }})
+          body: |
+            Firmware OpenWrt kustom untuk Buffalo WSR-3200AX4S dengan ruang penyimpanan maksimal.
+            Versi OpenWrt: ${{ github.event.inputs.openwrt_version }}
+          prerelease: true
+          files: |
             ./openwrt/bin/targets/mediatek/mt7622/*-initramfs-kernel.bin
             ./openwrt/bin/targets/mediatek/mt7622/*-squashfs-factory-uboot.bin
             ./openwrt/bin/targets/mediatek/mt7622/*-squashfs-sysupgrade.bin
