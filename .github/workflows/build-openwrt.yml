@@ -1,4 +1,4 @@
-name: 'Build OpenWrt WSR-3200AX4S (Versi Final)'
+name: 'Build OpenWrt WSR-3200AX4S (Final dengan Retry)'
 
 on:
   workflow_dispatch:
@@ -24,6 +24,7 @@ jobs:
       - name: 2. Siapkan Variabel Build
         id: build_vars
         run: |
+          # Di sini kita mendefinisikan variabel secara otomatis berdasarkan versi
           # Anda bisa memperbarui bagian ini jika ada versi baru di masa depan
           if [ "${{ github.event.inputs.openwrt_version }}" == "v24.10.2" ]; then
             echo "vermagic=49f3b78722ed2df9df713e744e978eb6" >> $GITHUB_OUTPUT # Ganti dengan vermagic yang benar
@@ -57,14 +58,29 @@ jobs:
             ~/openwrt/dl
           key: ${{ runner.os }}-openwrt-${{ github.event.inputs.openwrt_version }}-${{ hashFiles('**/patches') }}
 
-      - name: 6. Checkout Versi dan Perbarui Feeds
+      - name: 6. Checkout Versi dan Perbarui Feeds (dengan Retry)
         working-directory: ./openwrt
         run: |
           echo "BUILD_DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
           if [ "${{ github.event.inputs.openwrt_version }}" != "snapshot" ]; then
             git checkout ${{ github.event.inputs.openwrt_version }}
           fi
-          ./scripts/feeds update -a
+          
+          # =================================================================
+          # BLOK RETRY: Mencoba update feeds hingga 3 kali jika gagal.
+          # =================================================================
+          for i in 1 2 3; do
+            echo "Attempt $i to update feeds..."
+            ./scripts/feeds update -a && break  # Keluar dari loop jika berhasil
+            if [ $i -lt 3 ]; then
+              echo "Feeds update failed. Retrying in 60 seconds..."
+              sleep 60
+            else
+              echo "::error::Feeds update failed after 3 attempts."
+              exit 1 # Keluar dengan status error jika gagal 3x
+            fi
+          done
+          
           ./scripts/feeds install -a
 
       - name: 7. Siapkan Konfigurasi Build dan Terapkan Modifikasi
