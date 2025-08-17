@@ -1,0 +1,153 @@
+#by ST4NGKUDUT
+name: 'Build OpenWrt WSR-3200AX4S'
+
+on:
+  workflow_dispatch:
+    inputs:
+      openwrt_version:
+        description: 'Pilih Versi OpenWrt'
+        required: true
+        type: choice
+        default: 'v24.10.0'
+        options:
+          - 'v24.10.2'
+          - 'v24.10.1'
+          - 'v24.10.0'
+          - 'snapshot'
+      manual_vermagic:
+        description: 'Input vermagic manual (Opsional, jika versi bukan v24.10.0)'
+        required: false
+        default: ''
+        
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout Kode Repositori
+        uses: actions/checkout@v4
+
+      - name: 2. Siapkan Variabel Build
+        id: build_vars
+        run: |
+          VERMAGIC=""
+          KERNEL_CONFIG="config-6.6"
+
+          if [[ "${{ github.event.inputs.openwrt_version }}" == "v24.10.0" ]]; then
+            VERMAGIC="49f3b78722ed2df9df713e744e978eb6"
+            echo "✅ Menggunakan vermagic default untuk v24.10.0"
+          elif [[ -n "${{ github.event.inputs.manual_vermagic }}" ]]; then
+            VERMAGIC="${{ github.event.inputs.manual_vermagic }}"
+            echo "✅ Menggunakan vermagic manual yang diinput: ${VERMAGIC}"
+          else
+            VERMAGIC="afd40c8eeeeb9c2687b86b1756cbcd8d"
+            echo "✅ Menggunakan vermagic default untuk versi selain v24.10.0"
+          fi
+          
+          echo "vermagic=${VERMAGIC}" >> $GITHUB_OUTPUT
+          echo "kernel_config=${KERNEL_CONFIG}" >> $GITHUB_OUTPUT
+          echo "✅ Variabel build diatur untuk ${{ github.event.inputs.openwrt_version }}"
+      
+      - name: 3. Instal Dependensi Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang flex bison g++ gawk gcc-multilib gettext \
+            git libncurses5-dev libssl-dev python3-setuptools rsync unzip \
+            zlib1g-dev file wget ccache
+
+      - name: 4. Clone Repositori OpenWrt
+        run: git clone https://git.openwrt.org/openwrt/openwrt.git
+
+      - name: 5. Atur Cache Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/staging_dir
+            openwrt/dl
+            openwrt/.ccache
+          key: ${{ runner.os }}-openwrt-${{ github.event.inputs.openwrt_version }}-${{ hashFiles('**/patches', '**/openwrt/.config') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-${{ github.event.inputs.openwrt_version }}-
+
+      - name: 6. Checkout Versi & Perbarui Feeds
+        working-directory: ./openwrt
+        run: |
+          echo "BUILD_DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
+          if [ "${{ github.event.inputs.openwrt_version }}" != "snapshot" ]; then
+            git checkout ${{ github.event.inputs.openwrt_version }}
+          fi
+          
+          for i in 1 2 3; do
+            echo "Attempt $i to update feeds..."
+            ./scripts/feeds update -a && break
+            if [ $i -lt 3 ]; then
+              echo "Feeds update failed. Retrying in 60 seconds..."
+              sleep 60
+            else
+              echo "::error::Feeds update failed after 3 attempts."
+              exit 1
+            fi
+          done
+          
+          ./scripts/feeds install -a
+      
+      - name: 7. Terapkan Konfigurasi & Modifikasi Kustom
+        working-directory: ./openwrt
+        run: |
+          echo 'CONFIG_CCACHE=y' > .config
+          
+          if [ "${{ github.event.inputs.openwrt_version }}" != "snapshot" ]; then
+            wget https://downloads.openwrt.org/releases/$(echo ${{ github.event.inputs.openwrt_version }} | sed 's/v//')/targets/mediatek/mt7622/config.buildinfo -O .config
+          else
+            cp target/linux/mediatek/mt7622/config.buildinfo .config
+          fi
+          echo "CONFIG_TARGET_mediatek_mt7622_DEVICE_buffalo_wsr-3200ax4s=y" >> .config
+          make defconfig
+
+          cp ../patches/mt7622-buffalo-wsr-3200ax4s.dts ./target/linux/mediatek/dts/
+          
+          echo "CONFIG_MTD_VIRT_CONCAT=y" >> ./target/linux/mediatek/mt7622/${{ steps.build_vars.outputs.kernel_config }}
+          
+          echo "${{ steps.build_vars.outputs.vermagic }}" > ./vermagic
+          sed -i 's|grep '\''=\[ym\]'\'' $(LINUX_DIR)/.config.set \| LC_ALL=C sort \| $(MKHASH) md5 > $(LINUX_DIR)/.vermagic|cp $(TOPDIR)/vermagic $(LINUX_DIR)/.vermagic|g' ./include/kernel-defaults.mk
+          sed -i 's|STAMP_BUILT:=$(STAMP_BUILT)_$(shell $(SCRIPT_DIR)/kconfig.pl $(LINUX_DIR)/.config \| $(MKHASH) md5)|STAMP_BUILT:=$(STAMP_BUILT)_$(shell cat $(LINUX_DIR)/.vermagic)|g' ./package/kernel/linux/Makefile
+      
+      - name: 8. Mulai Proses Build
+        working-directory: ./
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/openwrt/.ccache
+          USE_CCACHE: 1
+        run: |
+          ccache -s
+          make -j$(nproc) -C openwrt download
+          make -j$(nproc) -C openwrt world
+          ccache -s
+
+      - name: 9. Unggah Artefak Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: WSR-3200AX4S-Firmware-${{ github.event.inputs.openwrt_version }}-${{ env.BUILD_DATE }}
+          path: |
+            ./openwrt/bin/targets/mediatek/mt7622/*-initramfs-kernel.bin
+            ./openwrt/bin/targets/mediatek/mt7622/*-squashfs-factory-uboot.bin
+            ./openwrt/bin/targets/mediatek/mt7622/*-squashfs-sysupgrade.bin
+            ./openwrt/bin/targets/mediatek/mt7622/config.buildinfo
+
+      - name: 10. Unggah Firmware ke GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./openwrt/bin/targets/mediatek/mt7622/*
+          tag_name: WSR-3200AX4S-${{ github.event.inputs.openwrt_version }}-${{ env.BUILD_DATE }}
+          name: WSR-3200AX4S OpenWrt ${{ github.event.inputs.openwrt_version }}
+          body: |
+            Firmware OpenWrt untuk Buffalo WSR-3200AX4S.
+
+            Versi OpenWrt: ${{ github.event.inputs.openwrt_version }}
+            Tanggal Build: ${{ env.BUILD_DATE }}
+
+            File yang tersedia:
+            - initramfs-kernel.bin
+            - squashfs-factory-uboot.bin
+            - squashfs-sysupgrade.bin
+            - config.buildinfo
