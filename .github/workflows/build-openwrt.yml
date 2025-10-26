@@ -8,8 +8,10 @@ on:
         description: 'Pilih Versi OpenWrt'
         required: true
         type: choice
-        default: 'v24.10.0'
+        default: 'v24.10.4'
         options:
+          - 'v24.10.4'
+          - 'v24.10.3'
           - 'v24.10.2'
           - 'v24.10.1'
           - 'v24.10.0'
@@ -25,8 +27,8 @@ jobs:
       - name: 2. Siapkan Variabel Build
         id: build_vars
         run: |
-          if [[ "${{ github.event.inputs.openwrt_version }}" == "v24.10.0" ]]; then
-            echo "vermagic=49f3b78722ed2df9df713e744e978eb6" >> $GITHUB_OUTPUT 
+          if [[ "${{ github.event.inputs.openwrt_version }}" == "v24.10.4" ]]; then
+            echo "vermagic=afd40c8eeeeb9c2687b86b1756cbcd8d" >> $GITHUB_OUTPUT 
             echo "kernel_config=config-6.6" >> $GITHUB_OUTPUT
           else
             echo "vermagic=afd40c8eeeeb9c2687b86b1756cbcd8d" >> $GITHUB_OUTPUT
