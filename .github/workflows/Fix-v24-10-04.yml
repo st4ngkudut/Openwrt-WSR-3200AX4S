@@ -24,7 +24,6 @@ steps:
 - name: 1. Checkout Kode Repositori
 uses: actions/checkout@v4
 
-```
   - name: 2. Siapkan Variabel Build
     id: build_vars
     run: |
@@ -127,4 +126,3 @@ uses: actions/checkout@v4
         ./openwrt/bin/targets/mediatek/mt7622/*-squashfs-factory-uboot.bin
         ./openwrt/bin/targets/mediatek/mt7622/*-squashfs-sysupgrade.bin
         ./openwrt/bin/targets/mediatek/mt7622/config.buildinfo
-```
