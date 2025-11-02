@@ -1,5 +1,5 @@
 #by ST4NGKUDUT
-name: 'Build OpenWrt WSR-3200AX4S'
+name: 'Build OpenWrt WSR-3200AX4S v24.10.04'
 
 on:
 workflow_dispatch:
