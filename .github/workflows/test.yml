@@ -122,7 +122,7 @@ jobs:
         run: |
           ccache -s
           make -j$(nproc) -C openwrt download
-          make -j$(nproc) -C openwrt world
+          make -j1 V=sc -C openwrt world
           ccache -s
 
       - name: 9. Unggah Artefak Build
