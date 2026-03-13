@@ -29,7 +29,7 @@ jobs:
       - name: 2. Siapkan Variabel Build
         id: build_vars
         run: |
-          if [[ "${{ github.event.inputs.openwrt_version }}" == "v24.10.5" ]]; then
+          if [[ "${{ github.event.inputs.openwrt_version }}" == "v25.12.0" ]]; then
             echo "vermagic=2e14cd580d013ab4e512592b79bf44ae" >> $GITHUB_OUTPUT
             echo "kernel_config=config-6.12" >> $GITHUB_OUTPUT
           else
