@@ -13,7 +13,7 @@ on:
         description: 'Daftar Paket Tambahan (Pisahkan dengan spasi)'
         required: false
         type: string
-        default: 'luci luci-ssl wireguard-tools luci-app-wireguard htop nano'
+        default: 'luci -dnsmasq dnsmasq-full htop nano wget-ssl git-http'
 
 jobs:
   build:
