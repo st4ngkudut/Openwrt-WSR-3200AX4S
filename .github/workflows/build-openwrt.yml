@@ -8,7 +8,7 @@ on:
         description: 'Pilih Versi OpenWrt'
         required: true
         type: choice
-        default: 'v24.10.4'
+        default: 'v25.12.1'
         options:
           - 'v24.12.1'
           - 'v25.12.0'
