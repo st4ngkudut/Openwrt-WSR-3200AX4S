@@ -28,21 +28,35 @@ jobs:
           VERSION="${{ github.event.inputs.openwrt_version }}"
           VERSION_NUM=$(echo "$VERSION" | sed 's/v//')
           
+          # Tentukan URL direktori kmods
           if [[ "$VERSION" != "snapshot" ]]; then
-            echo "Mengambil data dari rilis resmi OpenWrt $VERSION_NUM..."
-            PACKAGES_URL="https://downloads.openwrt.org/releases/${VERSION_NUM}/targets/mediatek/mt7622/packages/Packages"
+            KMODS_URL="https://downloads.openwrt.org/releases/${VERSION_NUM}/targets/mediatek/mt7622/kmods/"
           else
-            echo "Mengambil data dari snapshot OpenWrt..."
-            PACKAGES_URL="https://downloads.openwrt.org/snapshots/targets/mediatek/mt7622/packages/Packages"
+            KMODS_URL="https://downloads.openwrt.org/snapshots/targets/mediatek/mt7622/kmods/"
           fi
           
-          FULL_KERNEL_VER=$(curl -sL "$PACKAGES_URL" | awk '/^Package: kernel$/{f=1} f && /^Version:/{print $2; exit}')
+          echo "Mencari versi kernel dan vermagic di: $KMODS_URL"
+          
+          # Ambil nama folder dari halaman index kmods menggunakan regex (Contoh: 6.12.74-1-2e14cd580d013ab4e512592b79bf44ae)
+          FULL_KERNEL_VER=$(curl -sL "$KMODS_URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-[a-f0-9]{32}' | head -n 1)
+          
+          # Fallback ke metode lama (file Packages) jika folder kmods tidak ditemukan (untuk OpenWrt versi lawas)
+          if [[ -z "$FULL_KERNEL_VER" ]]; then
+            echo "Folder kmods tidak ditemukan, mencoba membaca dari index Packages lama..."
+            if [[ "$VERSION" != "snapshot" ]]; then
+              PACKAGES_URL="https://downloads.openwrt.org/releases/${VERSION_NUM}/targets/mediatek/mt7622/packages/Packages"
+            else
+              PACKAGES_URL="https://downloads.openwrt.org/snapshots/targets/mediatek/mt7622/packages/Packages"
+            fi
+            FULL_KERNEL_VER=$(curl -sL "$PACKAGES_URL" | awk '/^Package: kernel$/{f=1} f && /^Version:/{print $2; exit}')
+          fi
           
           if [[ -z "$FULL_KERNEL_VER" ]]; then
-            echo "::error::Gagal mengambil informasi kernel dari URL: $PACKAGES_URL"
+            echo "::error::Gagal mengambil informasi kernel dari server OpenWrt."
             exit 1
           fi
           
+          # Ekstrak vermagic dan tentukan config kernel
           VERMAGIC=$(echo "$FULL_KERNEL_VER" | awk -F'-' '{print $NF}')
           KERNEL_BASE=$(echo "$FULL_KERNEL_VER" | cut -d'-' -f1)
           KERNEL_MAJOR_MINOR=$(echo "$KERNEL_BASE" | cut -d'.' -f1,2)
@@ -52,6 +66,7 @@ jobs:
           echo "kernel_config=$KERNEL_CONFIG" >> $GITHUB_OUTPUT
           
           echo "✅ Target Version: $VERSION"
+          echo "✅ Full Kernel String: $FULL_KERNEL_VER"
           echo "✅ Kernel Config: $KERNEL_CONFIG"
           echo "✅ Vermagic: $VERMAGIC"
       
