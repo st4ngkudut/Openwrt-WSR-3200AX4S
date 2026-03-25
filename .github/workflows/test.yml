@@ -129,10 +129,18 @@ jobs:
           # --- Eksekusi Daftar Paket Kustom dari Input ---
           CUSTOM_PKGS="${{ github.event.inputs.custom_packages }}"
           if [ -n "$CUSTOM_PKGS" ]; then
-            echo "⚙️ Memasukkan paket kustom..."
+            echo "⚙️ Memproses paket kustom..."
             for pkg in $CUSTOM_PKGS; do
-              echo "CONFIG_PACKAGE_$pkg=y" >> .config
-              echo "✅ Ditambahkan: $pkg"
+              if [[ $pkg == -* ]]; then
+                # Jika diawali tanda '-', hapus paket (disable)
+                clean_pkg="${pkg#-}"
+                echo "# CONFIG_PACKAGE_$clean_pkg is not set" >> .config
+                echo "❌ Dihapus: $clean_pkg"
+              else
+                # Jika tidak, tambahkan paket (enable)
+                echo "CONFIG_PACKAGE_$pkg=y" >> .config
+                echo "✅ Ditambahkan: $pkg"
+              fi
             done
           fi
           
